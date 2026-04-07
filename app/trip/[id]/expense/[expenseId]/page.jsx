@@ -1,0 +1,140 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { useTripStore } from "@/lib/store";
+import {
+  formatCurrency,
+  formatDateTime,
+  getExpenseById,
+  getExpenseLineItems,
+  getExpenseLineItemsTotal,
+  getExpenseShares,
+  getParticipantName,
+  getSplitLabel
+} from "@/lib/trip-helpers";
+
+export default function ExpenseDetailsPage() {
+  const params = useParams();
+  const { trips, hydrated } = useTripStore();
+  const trip = trips.find((item) => item.id === params.id);
+  const expense = trip ? getExpenseById(trip, params.expenseId) : null;
+
+  if (!hydrated) {
+    return (
+      <AppShell subtitle="We are loading the latest expense data from the server." title="Loading expense">
+        <p className="muted-copy">This expense will open once the current trip details finish syncing.</p>
+      </AppShell>
+    );
+  }
+
+  if (!trip) {
+    return (
+      <AppShell subtitle="Open a trip room first before reviewing an expense." title="Trip not found">
+        <Link className="primary-button" href="/">
+          Back to home
+        </Link>
+      </AppShell>
+    );
+  }
+
+  if (!expense) {
+    return (
+      <AppShell subtitle={`We could not find that expense inside ${trip.name}.`} title="Expense not found">
+        <Link className="primary-button" href={`/trip/${trip.id}`}>
+          Back to trip
+        </Link>
+      </AppShell>
+    );
+  }
+
+  const lineItems = getExpenseLineItems(expense);
+  const lineItemsTotal = getExpenseLineItemsTotal(expense);
+  const shares = getExpenseShares(expense);
+  const remainingUnitemized = Math.max(Number(expense.amount || 0) - lineItemsTotal, 0);
+
+  return (
+    <AppShell
+      showHome={false}
+      subtitle={`Expense details for ${trip.name}`}
+      title={expense.title}
+      actions={
+        <Link className="secondary-button" href={`/trip/${trip.id}`}>
+          Back to trip
+        </Link>
+      }
+    >
+      <section className="hero-card">
+        <span className="badge badge-soft">{expense.category}</span>
+        <h2>{formatCurrency(expense.amount)}</h2>
+        <p>
+          Paid by <strong>{getParticipantName(trip, expense.paidBy)}</strong> on {formatDateTime(expense.createdAt)}.
+        </p>
+      </section>
+
+      <section className="detail-grid">
+        <article className="highlight-card">
+          <span>Split style</span>
+          <strong>{getSplitLabel(expense)}</strong>
+        </article>
+        <article className="highlight-card">
+          <span>Participants</span>
+          <strong>{expense.participantIds.length}</strong>
+        </article>
+        <article className="highlight-card">
+          <span>Itemized total</span>
+          <strong>{formatCurrency(lineItemsTotal)}</strong>
+        </article>
+        <article className="highlight-card">
+          <span>Unitemized remainder</span>
+          <strong>{formatCurrency(remainingUnitemized)}</strong>
+        </article>
+      </section>
+
+      <section className="panel stack">
+        <div className="section-copy">
+          <span className="badge badge-soft">Item breakdown</span>
+          <h2>What this expense covered</h2>
+        </div>
+        {lineItems.length ? (
+          lineItems.map((item) => (
+            <div className="share-row" key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+              </div>
+              <strong>{formatCurrency(item.amount)}</strong>
+            </div>
+          ))
+        ) : (
+          <p className="muted-copy">No itemized rows were saved for this expense.</p>
+        )}
+      </section>
+
+      <section className="panel stack">
+        <div className="section-copy">
+          <span className="badge badge-soft">Per person</span>
+          <h2>Who owes what inside this expense</h2>
+        </div>
+        {expense.participantIds.map((participantId) => (
+          <div className="share-row" key={participantId}>
+            <div>
+              <strong>{getParticipantName(trip, participantId)}</strong>
+            </div>
+            <strong>{formatCurrency(shares[participantId] || 0)}</strong>
+          </div>
+        ))}
+      </section>
+
+      {expense.notes ? (
+        <section className="panel stack">
+          <div className="section-copy">
+            <span className="badge badge-soft">Notes</span>
+            <h2>Extra context</h2>
+          </div>
+          <p className="detail-note">{expense.notes}</p>
+        </section>
+      ) : null}
+    </AppShell>
+  );
+}
