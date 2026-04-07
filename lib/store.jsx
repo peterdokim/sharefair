@@ -42,6 +42,12 @@ function reducer(state, action) {
         trips: replaceTrip(state.trips, action.payload)
       };
 
+    case "REMOVE_TRIP":
+      return {
+        ...state,
+        trips: state.trips.filter((trip) => trip.id !== action.payload)
+      };
+
     default:
       return state;
   }
@@ -183,6 +189,16 @@ export function TripStoreProvider({ children }) {
         payload: payload.trip
       });
       return payload.trip;
+    },
+    async deleteTrip(tripId) {
+      const response = await fetch(`/api/trips/${tripId}`, {
+        method: "DELETE"
+      });
+      await parseResponse(response, "Could not delete the trip.");
+      dispatch({
+        type: "REMOVE_TRIP",
+        payload: tripId
+      });
     },
     async startPayment(tripId, input) {
       const response = await fetch("/api/payments/create", {

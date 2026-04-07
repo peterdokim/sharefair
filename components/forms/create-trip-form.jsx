@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTripStore } from "@/lib/store";
 
-const starterNames = ["", ""];
+const starterParticipants = [
+  { name: "", email: "" },
+  { name: "", email: "" }
+];
 
 export function CreateTripForm() {
   const router = useRouter();
@@ -15,20 +18,53 @@ export function CreateTripForm() {
     startDate: "",
     endDate: ""
   });
-  const [participants, setParticipants] = useState(starterNames);
+  const [participants, setParticipants] = useState(starterParticipants);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  function updateParticipant(index, value) {
-    setParticipants((current) => current.map((participant, currentIndex) => (currentIndex === index ? value : participant)));
+  function updateParticipant(index, field, value) {
+    setParticipants((current) =>
+      current.map((participant, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...participant,
+              [field]: value
+            }
+          : participant
+      )
+    );
   }
 
   function addParticipantField() {
-    setParticipants((current) => [...current, ""]);
+    setParticipants((current) => [...current, { name: "", email: "" }]);
+  }
+
+  function updateTripDate(field, value) {
+    setForm((current) => {
+      if (field === "startDate") {
+        const nextEndDate = current.endDate && current.endDate < value ? value : current.endDate;
+
+        return {
+          ...current,
+          startDate: value,
+          endDate: nextEndDate
+        };
+      }
+
+      return {
+        ...current,
+        [field]: value
+      };
+    });
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      setError("End date cannot be earlier than the start date.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
 
@@ -78,7 +114,7 @@ export function CreateTripForm() {
           <label className="field">
             <span>Start date</span>
             <input
-              onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))}
+              onChange={(event) => updateTripDate("startDate", event.target.value)}
               required
               type="date"
               value={form.startDate}
@@ -87,7 +123,8 @@ export function CreateTripForm() {
           <label className="field">
             <span>End date</span>
             <input
-              onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
+              min={form.startDate || undefined}
+              onChange={(event) => updateTripDate("endDate", event.target.value)}
               required
               type="date"
               value={form.endDate}
@@ -100,19 +137,30 @@ export function CreateTripForm() {
         <div className="section-copy">
           <span className="badge badge-soft">People</span>
           <h2>Add the group</h2>
-          <p>Focus on the real travelers, not a generic audience. This is where fairness starts.</p>
+          <p>Focus on the real travelers, not a generic audience. Add an email if you want real OTP emails instead of the fallback preview.</p>
         </div>
         {participants.map((participant, index) => (
-          <label className="field" key={`traveler-${index}`}>
-            <span>Traveler {index + 1}</span>
-            <input
-              onChange={(event) => updateParticipant(index, event.target.value)}
-              placeholder={`Friend ${index + 1}`}
-              required={index < 2}
-              type="text"
-              value={participant}
-            />
-          </label>
+          <div className="field-grid" key={`traveler-${index}`}>
+            <label className="field">
+              <span>Traveler {index + 1}</span>
+              <input
+                onChange={(event) => updateParticipant(index, "name", event.target.value)}
+                placeholder={`Friend ${index + 1}`}
+                required={index < 2}
+                type="text"
+                value={participant.name}
+              />
+            </label>
+            <label className="field">
+              <span>Email for OTP</span>
+              <input
+                onChange={(event) => updateParticipant(index, "email", event.target.value)}
+                placeholder="friend@example.com"
+                type="email"
+                value={participant.email}
+              />
+            </label>
+          </div>
         ))}
         <button className="secondary-button" onClick={addParticipantField} type="button">
           Add another friend

@@ -50,6 +50,12 @@ export default function PaymentProviderPage() {
       return;
     }
 
+    if (!/^\d{6}$/.test(code)) {
+      setStepUpError("Enter the full 6-digit code before verifying.");
+      setStepUpMessage("");
+      return;
+    }
+
     setIsSubmittingCode(true);
     setStepUpError("");
     setStepUpMessage("");
@@ -72,6 +78,10 @@ export default function PaymentProviderPage() {
 
       if (!response.ok) {
         throw new Error(payload.error || "The email code could not be verified.");
+      }
+
+      if (!payload.verified) {
+        throw new Error("The email code check did not complete.");
       }
 
       await refreshTrip(trip.id);
@@ -214,12 +224,6 @@ export default function PaymentProviderPage() {
                 <span>Challenge expires {formatDateTime(payment.stepUpExpiresAt)}</span>
                 <span>{payment.stepUpAttemptsRemaining} attempts remaining</span>
               </div>
-              {payment.debugStepUpCode ? (
-                <div className="code-preview">
-                  <span>Prototype email preview</span>
-                  <strong>{payment.debugStepUpCode}</strong>
-                </div>
-              ) : null}
             </div>
 
             <form className="stack" onSubmit={handleVerifyCode}>
@@ -227,15 +231,18 @@ export default function PaymentProviderPage() {
                 <span>Enter 6-digit code</span>
                 <input
                   inputMode="numeric"
+                  minLength={6}
                   maxLength={6}
                   onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  pattern="\d{6}"
                   placeholder="123456"
+                  required
                   type="text"
                   value={code}
                 />
               </label>
               <div className="step-up-actions">
-                <button className="primary-button" disabled={isSubmittingCode} type="submit">
+                <button className="primary-button" disabled={isSubmittingCode || code.length !== 6} type="submit">
                   {isSubmittingCode ? "Checking code..." : "Verify email code"}
                 </button>
                 <button className="secondary-button" disabled={isResendingCode} onClick={handleResendCode} type="button">

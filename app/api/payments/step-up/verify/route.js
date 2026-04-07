@@ -14,8 +14,17 @@ export async function POST(request) {
       code: body?.code
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      verified: true,
+      ...result
+    });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: error.status || 500 });
+    return NextResponse.json(
+      {
+        verified: false,
+        error: error.message
+      },
+      { status: error.status || 500 }
+    );
   }
 }

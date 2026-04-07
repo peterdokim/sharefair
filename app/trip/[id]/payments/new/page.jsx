@@ -32,6 +32,12 @@ export default function NewPaymentPage() {
   const fromParticipantId = searchParams.get("from");
   const toParticipantId = searchParams.get("to");
   const amount = Number(searchParams.get("amount"));
+  const isParticipantEmailError = error.includes("Add an email address");
+  const isEmailConfigError =
+    !isParticipantEmailError &&
+    (error.includes("RESEND_API_KEY") ||
+      error.includes("SHAREFAIR_EMAIL_FROM") ||
+      error.includes("email verification is not configured"));
 
   useEffect(() => {
     if (fromParticipantId) {
@@ -87,7 +93,8 @@ export default function NewPaymentPage() {
         },
         body: JSON.stringify({
           participantId: actor.id,
-          participantName: actor.name
+          participantName: actor.name,
+          participantEmail: actor.email || null
         })
       });
 
@@ -123,7 +130,16 @@ export default function NewPaymentPage() {
   }
 
   return (
-    <AppShell showHome={false} subtitle={`Start a safer handoff for ${trip.name}`} title="Choose a payment provider">
+    <AppShell
+      showHome={false}
+      subtitle={`Start a safer handoff for ${trip.name}`}
+      title="Choose a payment provider"
+      actions={
+        <Link className="secondary-button" href={`/trip/${trip.id}/settle`}>
+          Back to settle up
+        </Link>
+      }
+    >
       <section className="hero-card">
         <span className="badge badge-soft">Protected transfer</span>
         <h2>Send the money through a trusted provider, not a vague side conversation.</h2>
@@ -156,6 +172,30 @@ export default function NewPaymentPage() {
         </label>
         {error ? <p className="form-error">{error}</p> : null}
       </section>
+
+      {error ? (
+        <section className="panel stack">
+          <div className="section-copy">
+            <span className="badge badge-soft">What to do next</span>
+            <h2>Recover from this payment setup issue</h2>
+            <p>
+              {isEmailConfigError
+                ? "This payment cannot continue until real email verification is configured on the server."
+                : isParticipantEmailError
+                  ? "This participant needs a saved email address before the OTP step can start."
+                  : "You can safely return to the room and try again after fixing the setup issue."}
+            </p>
+          </div>
+          <div className="contract-actions">
+            <Link className="primary-button" href={`/trip/${trip.id}/settle`}>
+              Return to settle up
+            </Link>
+            <Link className="secondary-button" href={`/trip/${trip.id}`}>
+              Back to trip
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="stack">
         {providers.map((provider) => (

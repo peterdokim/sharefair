@@ -1,25 +1,91 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { useTripStore } from "@/lib/store";
 import {
+  canExpenseSettleNow,
   formatCurrency,
   formatDateTime,
+  formatDateTimeInputValue,
   getExpenseById,
   getExpenseLineItems,
   getExpenseLineItemsTotal,
   getExpenseShares,
   getParticipantName,
+  getSettlementRequestStatusLabel,
+  getSortedSettlementRequests,
   getSplitLabel
 } from "@/lib/trip-helpers";
 
 export default function ExpenseDetailsPage() {
   const params = useParams();
   const { trips, hydrated } = useTripStore();
+  const [dueAt, setDueAt] = useState("");
+  const [settlementRequests, setSettlementRequests] = useState([]);
+  const [settlementError, setSettlementError] = useState("");
+  const [settlementMessage, setSettlementMessage] = useState("");
+  const [loadingSettlementRequests, setLoadingSettlementRequests] = useState(false);
+  const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
+  const [settlingRequestId, setSettlingRequestId] = useState("");
   const trip = trips.find((item) => item.id === params.id);
   const expense = trip ? getExpenseById(trip, params.expenseId) : null;
+
+  useEffect(() => {
+    if (!expense || !canExpenseSettleNow(expense)) {
+      return;
+    }
+
+    const defaultDue = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    setDueAt(formatDateTimeInputValue(defaultDue.toISOString()));
+  }, [expense]);
+
+  useEffect(() => {
+    if (!hydrated || !trip?.id || !expense?.id) {
+      return;
+    }
+
+    let isActive = true;
+
+    async function loadSettlementRequests() {
+      setLoadingSettlementRequests(true);
+
+      try {
+        const response = await fetch(`/api/trips/${trip.id}/expenses/${expense.id}/settlement-requests`, {
+          cache: "no-store"
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load the settlement requests for this expense.");
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setSettlementError(error.message || "Could not load the settlement requests for this expense.");
+      } finally {
+        if (isActive) {
+          setLoadingSettlementRequests(false);
+        }
+      }
+    }
+
+    void loadSettlementRequests();
+
+    return () => {
+      isActive = false;
+    };
+  }, [expense?.id, hydrated, trip?.id]);
 
   if (!hydrated) {
     return (
@@ -53,6 +119,94 @@ export default function ExpenseDetailsPage() {
   const lineItemsTotal = getExpenseLineItemsTotal(expense);
   const shares = getExpenseShares(expense);
   const remainingUnitemized = Math.max(Number(expense.amount || 0) - lineItemsTotal, 0);
+  const payerName = getParticipantName(trip, expense.paidBy);
+  const eligibleForSettleNow = canExpenseSettleNow(expense);
+
+  function getSettlementStatusClass(status) {
+    if (status === "settled") {
+      return "status-confirmed";
+    }
+
+    if (status === "overdue") {
+      return "status-overdue";
+    }
+
+    return "status-pending";
+  }
+
+  async function refreshSettlementRequests() {
+    const response = await fetch(`/api/trips/${trip.id}/expenses/${expense.id}/settlement-requests`, {
+      cache: "no-store"
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not load the settlement requests for this expense.");
+    }
+
+    setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+  }
+
+  async function handleCreateSettlementRequests(event) {
+    event.preventDefault();
+    setSettlementError("");
+    setSettlementMessage("");
+
+    if (!dueAt) {
+      setSettlementError("Choose the exact due date and time before enforcing this payment.");
+      return;
+    }
+
+    setIsSubmittingSettlement(true);
+
+    try {
+      const response = await fetch(`/api/trips/${trip.id}/expenses/${expense.id}/settle-now`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          dueAt: new Date(dueAt).toISOString()
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not enforce the due-time reminder.");
+      }
+
+      setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+      setSettlementMessage("The social contract is live. ShareFair emailed each participant and queued follow-up reminders.");
+    } catch (error) {
+      setSettlementError(error.message || "Could not enforce the due-time reminder.");
+    } finally {
+      setIsSubmittingSettlement(false);
+    }
+  }
+
+  async function handleMarkSettled(requestId) {
+    setSettlementError("");
+    setSettlementMessage("");
+    setSettlingRequestId(requestId);
+
+    try {
+      const response = await fetch(`/api/trips/${trip.id}/settlement-requests/${requestId}`, {
+        method: "PATCH"
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not mark this settlement request as settled.");
+      }
+
+      await refreshSettlementRequests();
+      setSettlementMessage("This cost is now marked as settled for that participant.");
+    } catch (error) {
+      setSettlementError(error.message || "Could not mark this settlement request as settled.");
+    } finally {
+      setSettlingRequestId("");
+    }
+  }
 
   return (
     <AppShell
@@ -124,6 +278,85 @@ export default function ExpenseDetailsPage() {
             <strong>{formatCurrency(shares[participantId] || 0)}</strong>
           </div>
         ))}
+      </section>
+
+      <section className="panel stack">
+        <div className="section-copy">
+          <span className="badge badge-soft">Social contract</span>
+          <h2>Settle this cost by an exact time</h2>
+          <p>
+            {eligibleForSettleNow
+              ? `Because this is a ${expense.category.toLowerCase()} cost, ${payerName} can enforce a due time and ShareFair will email the group immediately, then ping again 3 hours and 15 minutes before the deadline.`
+              : "Settle now enforcement is only available for food and transportation expenses in this version."}
+          </p>
+        </div>
+
+        {eligibleForSettleNow ? (
+          <>
+            <form className="stack" onSubmit={handleCreateSettlementRequests}>
+              <label className="field">
+                <span>Exact due time</span>
+                <input min={formatDateTimeInputValue(new Date().toISOString())} onChange={(event) => setDueAt(event.target.value)} type="datetime-local" value={dueAt} />
+              </label>
+              <button className="primary-button" disabled={isSubmittingSettlement} type="submit">
+                {isSubmittingSettlement ? "Sending contract..." : "Enforce settle now"}
+              </button>
+            </form>
+
+            {settlementError ? <p className="form-error">{settlementError}</p> : null}
+            {settlementMessage ? <p className="success-copy">{settlementMessage}</p> : null}
+
+            {loadingSettlementRequests ? (
+              <p className="muted-copy">Loading the due-time payment requests for this expense.</p>
+            ) : settlementRequests.length ? (
+              settlementRequests.map((request) => (
+                <article className="log-row" key={request.id}>
+                  <div className="log-row-top">
+                    <div>
+                      <strong>
+                        {getParticipantName(trip, request.fromParticipantId)} pays {getParticipantName(trip, request.toParticipantId)}
+                      </strong>
+                      <p className="muted-copy">
+                        {request.expenseTitle} | {formatCurrency(request.amount)}
+                      </p>
+                    </div>
+                    <span className={`status-badge ${getSettlementStatusClass(request.status)}`}>
+                      {getSettlementRequestStatusLabel(request.status)}
+                    </span>
+                  </div>
+                  <div className="log-row-meta">
+                    <span>Due {formatDateTime(request.dueAt)}</span>
+                    <span>
+                      {request.settledAt
+                        ? `Settled ${formatDateTime(request.settledAt)}`
+                        : request.reminder15mSentAt
+                          ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
+                          : request.reminder3hSentAt
+                            ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
+                            : request.initialSentAt
+                              ? `Initial notice sent ${formatDateTime(request.initialSentAt)}`
+                              : "Awaiting first notice"}
+                    </span>
+                  </div>
+                  {request.status !== "settled" ? (
+                    <div className="contract-actions">
+                      <button
+                        className="secondary-button"
+                        disabled={settlingRequestId === request.id}
+                        onClick={() => handleMarkSettled(request.id)}
+                        type="button"
+                      >
+                        {settlingRequestId === request.id ? "Saving..." : "Mark as settled"}
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <p className="muted-copy">No enforceable payment requests exist for this expense yet.</p>
+            )}
+          </>
+        ) : null}
       </section>
 
       {expense.notes ? (

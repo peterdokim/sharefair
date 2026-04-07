@@ -207,6 +207,17 @@ textarea {
   transition: transform 140ms ease, box-shadow 140ms ease;
 }
 
+.trip-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trip-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .trip-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 16px 34px rgba(105, 64, 34, 0.12);
@@ -706,6 +717,11 @@ textarea {
   color: var(--accent);
 }
 
+.status-overdue {
+  background: rgba(156, 61, 43, 0.14);
+  color: var(--danger);
+}
+
 .form-error {
   margin: 0;
   padding: 14px 16px;
@@ -747,6 +763,14 @@ textarea {
   line-height: 1.6;
 }
 
+.contract-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
 @media (max-width: 520px) {
   .app-shell {
     padding: 0;
@@ -775,7 +799,8 @@ textarea {
   .log-row-meta,
   .share-row,
   .mail-preview-top,
-  .mail-meta {
+  .mail-meta,
+  .contract-actions {
     flex-direction: column;
     align-items: flex-start;
   }

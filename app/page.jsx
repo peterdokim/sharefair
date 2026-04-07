@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { TripCard } from "@/components/trip-card";
@@ -7,9 +8,30 @@ import { useTripStore } from "@/lib/store";
 import { formatCurrency, getTripTotal, getUnsettledTripCount } from "@/lib/trip-helpers";
 
 export default function HomePage() {
-  const { trips, hydrated, error } = useTripStore();
+  const { deleteTrip, trips, hydrated, error } = useTripStore();
+  const [actionError, setActionError] = useState("");
+  const [deletingTripId, setDeletingTripId] = useState("");
   const totalTracked = trips.reduce((sum, trip) => sum + getTripTotal(trip), 0);
   const unsettledTrips = getUnsettledTripCount(trips);
+
+  async function handleDeleteTrip(trip) {
+    const shouldDelete = window.confirm(`Delete ${trip.name}? This will remove its expenses and payment log.`);
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActionError("");
+    setDeletingTripId(trip.id);
+
+    try {
+      await deleteTrip(trip.id);
+    } catch (deleteError) {
+      setActionError(deleteError.message || "Could not delete that trip.");
+    } finally {
+      setDeletingTripId("");
+    }
+  }
 
   return (
     <AppShell
@@ -58,8 +80,16 @@ export default function HomePage() {
             <p className="muted-copy">{error}</p>
           </section>
         ) : null}
+        {actionError ? <p className="form-error">{actionError}</p> : null}
         {trips.length ? (
-          trips.map((trip) => <TripCard key={trip.id} trip={trip} />)
+          trips.map((trip) => (
+            <TripCard
+              isDeleting={deletingTripId === trip.id}
+              key={trip.id}
+              onDelete={handleDeleteTrip}
+              trip={trip}
+            />
+          ))
         ) : (
           <section className="panel empty-state stack">
             <h3>No trip rooms yet</h3>

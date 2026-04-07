@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS participants (
   id TEXT PRIMARY KEY,
   trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  email TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -71,4 +72,22 @@ CREATE TABLE IF NOT EXISTS payments (
   step_up_status TEXT,
   step_up_verified_at TIMESTAMPTZ,
   debug_step_up_code TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settlement_requests (
+  id TEXT PRIMARY KEY,
+  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  expense_id TEXT NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+  expense_title TEXT NOT NULL,
+  expense_category TEXT NOT NULL,
+  from_participant_id TEXT NOT NULL REFERENCES participants(id),
+  to_participant_id TEXT NOT NULL REFERENCES participants(id),
+  amount INTEGER NOT NULL,
+  due_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  settled_at TIMESTAMPTZ,
+  initial_sent_at TIMESTAMPTZ,
+  reminder_3h_sent_at TIMESTAMPTZ,
+  reminder_15m_sent_at TIMESTAMPTZ
 );

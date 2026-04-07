@@ -1,27 +1,79 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { BottomNav } from "@/components/bottom-nav";
 import { useTripStore } from "@/lib/store";
 import {
+  canExpenseSettleNow,
   formatCurrency,
   formatDateTime,
   getParticipantName,
   getPaymentMethodLabel,
   getPaymentStatusLabel,
+  getSettlementRequestStatusLabel,
   getSettlementPlan,
-  getSortedPaymentLog
+  getSortedPaymentLog,
+  getSortedSettlementRequests
 } from "@/lib/trip-helpers";
 
 export default function SettlePage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const { hydrated, markRemindersSent, trips } = useTripStore();
-  const [sentThisSession, setSentThisSession] = useState(false);
+  const { hydrated, trips } = useTripStore();
+  const [settlementRequests, setSettlementRequests] = useState([]);
+  const [settlementError, setSettlementError] = useState("");
+  const [settlementMessage, setSettlementMessage] = useState("");
+  const [loadingSettlementRequests, setLoadingSettlementRequests] = useState(false);
+  const [settlingRequestId, setSettlingRequestId] = useState("");
   const trip = trips.find((item) => item.id === params.id);
+
+  useEffect(() => {
+    if (!hydrated || !trip?.id) {
+      return;
+    }
+
+    let isActive = true;
+
+    async function loadSettlementRequests() {
+      setLoadingSettlementRequests(true);
+
+      try {
+        const response = await fetch(`/api/trips/${trip.id}/settlement-requests`, {
+          cache: "no-store"
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load the settlement contracts.");
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setSettlementError(error.message || "Could not load the settlement contracts.");
+      } finally {
+        if (isActive) {
+          setLoadingSettlementRequests(false);
+        }
+      }
+    }
+
+    void loadSettlementRequests();
+
+    return () => {
+      isActive = false;
+    };
+  }, [hydrated, trip?.id]);
 
   if (!hydrated) {
     return (
@@ -44,6 +96,7 @@ export default function SettlePage() {
   const transfers = getSettlementPlan(trip);
   const paymentLog = getSortedPaymentLog(trip);
   const confirmedPaymentId = searchParams.get("confirmedPayment");
+  const eligibleExpenseCount = trip.expenses.filter((expense) => canExpenseSettleNow(expense)).length;
 
   function getPendingPayment(transfer) {
     return paymentLog.find(
@@ -54,12 +107,52 @@ export default function SettlePage() {
     );
   }
 
-  async function handleSendReminders() {
+  function getSettlementStatusClass(status) {
+    if (status === "settled") {
+      return "status-confirmed";
+    }
+
+    if (status === "overdue") {
+      return "status-overdue";
+    }
+
+    return "status-pending";
+  }
+
+  async function refreshSettlementRequests() {
+    const response = await fetch(`/api/trips/${trip.id}/settlement-requests`, {
+      cache: "no-store"
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not load the settlement contracts.");
+    }
+
+    setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+  }
+
+  async function handleMarkSettled(requestId) {
+    setSettlementError("");
+    setSettlementMessage("");
+    setSettlingRequestId(requestId);
+
     try {
-      await markRemindersSent(trip.id);
-      setSentThisSession(true);
-    } catch {
-      setSentThisSession(false);
+      const response = await fetch(`/api/trips/${trip.id}/settlement-requests/${requestId}`, {
+        method: "PATCH"
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not mark this social contract as settled.");
+      }
+
+      await refreshSettlementRequests();
+      setSettlementMessage("The payer marked that due-time payment as settled.");
+    } catch (error) {
+      setSettlementError(error.message || "Could not mark this social contract as settled.");
+    } finally {
+      setSettlingRequestId("");
     }
   }
 
@@ -129,6 +222,78 @@ export default function SettlePage() {
 
       <section className="panel stack">
         <div className="section-copy">
+          <span className="badge badge-soft">Social contracts</span>
+          <h2>Due-time enforcement for food and transport</h2>
+          <p>
+            Eligible expenses can turn into enforceable payment requests with an exact deadline, a first email, and follow-up
+            pings 3 hours and 15 minutes before the due time.
+          </p>
+        </div>
+
+        {settlementError ? <p className="form-error">{settlementError}</p> : null}
+        {settlementMessage ? <p className="success-copy">{settlementMessage}</p> : null}
+
+        {loadingSettlementRequests ? (
+          <p className="muted-copy">Loading the active social contracts for this room.</p>
+        ) : settlementRequests.length ? (
+          settlementRequests.map((request) => (
+            <article className="log-row" key={request.id}>
+              <div className="log-row-top">
+                <div>
+                  <strong>
+                    {getParticipantName(trip, request.fromParticipantId)} pays {getParticipantName(trip, request.toParticipantId)}
+                  </strong>
+                  <p className="muted-copy">
+                    {request.expenseTitle} | {request.expenseCategory}
+                  </p>
+                </div>
+                <span className={`status-badge ${getSettlementStatusClass(request.status)}`}>
+                  {getSettlementRequestStatusLabel(request.status)}
+                </span>
+              </div>
+              <div className="log-row-meta">
+                <span>
+                  {formatCurrency(request.amount)} due {formatDateTime(request.dueAt)}
+                </span>
+                <span>
+                  {request.settledAt
+                    ? `Settled ${formatDateTime(request.settledAt)}`
+                    : request.reminder15mSentAt
+                      ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
+                      : request.reminder3hSentAt
+                        ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
+                        : request.initialSentAt
+                          ? `Initial email sent ${formatDateTime(request.initialSentAt)}`
+                          : "Initial email pending"}
+                </span>
+              </div>
+              <div className="contract-actions">
+                <Link className="text-link" href={`/trip/${trip.id}/expense/${request.expenseId}`}>
+                  Open expense
+                </Link>
+                {request.status !== "settled" ? (
+                  <button
+                    className="secondary-button"
+                    disabled={settlingRequestId === request.id}
+                    onClick={() => handleMarkSettled(request.id)}
+                    type="button"
+                  >
+                    {settlingRequestId === request.id ? "Saving..." : "Mark as settled"}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="muted-copy">
+            No due-time contracts exist yet. Open a food or transport expense to enforce a payment deadline. {eligibleExpenseCount}{" "}
+            eligible expense{eligibleExpenseCount === 1 ? "" : "s"} currently match that rule.
+          </p>
+        )}
+      </section>
+
+      <section className="panel stack">
+        <div className="section-copy">
           <span className="badge badge-soft">Payment log</span>
           <h2>Provider-verified settlement history</h2>
           <p>Every individual transfer stays visible with a method, status, reference, and timestamp.</p>
@@ -170,31 +335,6 @@ export default function SettlePage() {
         ) : (
           <p className="muted-copy">No provider-backed transfers yet. Start one from the suggestions above.</p>
         )}
-      </section>
-
-      <section className="panel stack">
-        <div className="section-copy">
-          <span className="badge badge-soft">Reminder preview</span>
-          <h2>What the app sends</h2>
-        </div>
-        {transfers.length ? (
-          transfers.map((transfer) => (
-            <article className="reminder-card" key={`message-${transfer.from.id}-${transfer.to.id}`}>
-              <p>
-                <strong>To {transfer.from.name}:</strong> Your balance for <strong>{trip.name}</strong> is ready. You owe{" "}
-                <strong>{formatCurrency(transfer.amount)}</strong> to {transfer.to.name}.
-              </p>
-            </article>
-          ))
-        ) : (
-          <p className="muted-copy">No reminder is needed because the group is already balanced.</p>
-        )}
-        <button className="primary-button" disabled={!transfers.length} onClick={handleSendReminders} type="button">
-          Send app reminders
-        </button>
-        {sentThisSession || trip.remindersSentAt ? (
-          <p className="success-copy">Reminders were sent from the room, so no one had to message their friends manually.</p>
-        ) : null}
       </section>
 
       <BottomNav tripId={trip.id} />

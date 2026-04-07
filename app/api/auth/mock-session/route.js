@@ -12,13 +12,15 @@ export async function POST(request) {
     ok: true,
     actor: {
       participantId: body.participantId,
-      participantName: body.participantName || "Unknown"
+      participantName: body.participantName || "Unknown",
+      participantEmail: body.participantEmail || null
     }
   });
 
   attachActorSession(response, {
     participantId: body.participantId,
-    participantName: body.participantName || "Unknown"
+    participantName: body.participantName || "Unknown",
+    participantEmail: body.participantEmail || null
   });
 
   return response;
@@ -29,4 +31,3 @@ export async function DELETE() {
   clearActorSession(response);
   return response;
 }
-
