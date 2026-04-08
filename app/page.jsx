@@ -35,8 +35,7 @@ export default function HomePage() {
 
   return (
     <AppShell
-      subtitle="Shared travel costs without turning one friend into the collector."
-      title="Trip rooms that handle the awkward part"
+      title="ShareFair"
       actions={
         <Link className="primary-button compact" href="/trip/new">
           New trip
@@ -44,12 +43,6 @@ export default function HomePage() {
       }
     >
       <section className="hero-card">
-        <span className="badge badge-soft">Prototype focus</span>
-        <h2>The app asks for repayment so the friend does not have to.</h2>
-        <p>
-          Log each cost, include only the people who joined, and let the group see a neutral balance instead of waiting for a
-          personal text.
-        </p>
         <div className="hero-stats">
           <div>
             <span>Trips tracked</span>
