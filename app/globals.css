@@ -68,6 +68,7 @@ textarea {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  flex-wrap: wrap;
   padding: 28px 24px 18px;
   position: sticky;
   top: 0;
@@ -100,6 +101,15 @@ textarea {
 
 .header-actions {
   flex-shrink: 0;
+  width: 100%;
+}
+
+.header-button-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .eyebrow-link,
@@ -275,10 +285,29 @@ textarea {
   gap: 18px;
 }
 
+.form-actions,
+.inline-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.form-actions {
+  justify-content: space-between;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .field-grid {
@@ -354,12 +383,27 @@ textarea {
   font-weight: 600;
 }
 
+.compact-button {
+  min-height: 40px;
+}
+
+.header-button-group .primary-button,
+.header-button-group .secondary-button {
+  flex: 1 1 160px;
+  justify-content: center;
+}
+
 .text-link {
   align-self: center;
   padding: 10px 0;
   background: transparent;
   color: var(--accent);
   font-weight: 700;
+}
+
+.inline-text-link {
+  align-self: flex-start;
+  padding: 0;
 }
 
 .primary-button:hover,
@@ -674,6 +718,33 @@ textarea {
   gap: 12px;
 }
 
+.demo-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.demo-receipt-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(97, 61, 28, 0.12);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.demo-receipt-card strong {
+  display: block;
+}
+
+.demo-receipt-card p {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 .log-row {
   padding: 16px;
   border-radius: 22px;
@@ -715,6 +786,11 @@ textarea {
 .status-pending {
   background: rgba(178, 75, 42, 0.12);
   color: var(--accent);
+}
+
+.status-paid {
+  background: rgba(20, 94, 85, 0.12);
+  color: #145e55;
 }
 
 .status-overdue {
@@ -763,6 +839,37 @@ textarea {
   line-height: 1.6;
 }
 
+.detail-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.traveler-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(97, 61, 28, 0.1);
+}
+
+.traveler-row:last-child {
+  border-bottom: 0;
+}
+
+.traveler-row strong {
+  display: block;
+}
+
+.traveler-row p {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+}
+
 .contract-actions {
   display: flex;
   justify-content: space-between;
@@ -774,6 +881,11 @@ textarea {
 @media (max-width: 520px) {
   .app-shell {
     padding: 0;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .phone-frame {
@@ -790,7 +902,8 @@ textarea {
   .hero-stats,
   .trip-stats,
   .provider-summary-grid,
-  .detail-grid {
+  .detail-grid,
+  .demo-receipt-grid {
     grid-template-columns: 1fr;
   }
 
@@ -800,9 +913,22 @@ textarea {
   .share-row,
   .mail-preview-top,
   .mail-meta,
-  .contract-actions {
+  .contract-actions,
+  .traveler-row,
+  .form-actions,
+  .header-button-group {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .header-actions,
+  .header-button-group,
+  .header-button-group a {
+    width: 100%;
+  }
+
+  .header-button-group a {
+    justify-content: center;
   }
 
   .settlement-actions {

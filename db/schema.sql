@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS settlement_requests (
   due_at TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  paid_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ,
   settled_at TIMESTAMPTZ,
   initial_sent_at TIMESTAMPTZ,
   reminder_3h_sent_at TIMESTAMPTZ,

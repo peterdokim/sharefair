@@ -164,6 +164,21 @@ export function TripStoreProvider({ children }) {
       });
       return payload.trip.id;
     },
+    async updateTrip(tripId, input) {
+      const response = await fetch(`/api/trips/${tripId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+      const payload = await parseResponse(response, "Could not save the trip details.");
+      dispatch({
+        type: "UPSERT_TRIP",
+        payload: payload.trip
+      });
+      return payload.trip;
+    },
     async addExpense(tripId, input) {
       const response = await fetch(`/api/trips/${tripId}/expenses`, {
         method: "POST",

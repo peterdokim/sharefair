@@ -15,6 +15,7 @@ import {
   getExpenseLineItemsTotal,
   getExpenseShares,
   getParticipantName,
+  getSettlementExpenseSummary,
   getSettlementRequestStatusLabel,
   getSortedSettlementRequests,
   getSplitLabel
@@ -29,7 +30,8 @@ export default function ExpenseDetailsPage() {
   const [settlementMessage, setSettlementMessage] = useState("");
   const [loadingSettlementRequests, setLoadingSettlementRequests] = useState(false);
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
-  const [settlingRequestId, setSettlingRequestId] = useState("");
+  const [actingRequestId, setActingRequestId] = useState("");
+  const [isSettlingBill, setIsSettlingBill] = useState(false);
   const trip = trips.find((item) => item.id === params.id);
   const expense = trip ? getExpenseById(trip, params.expenseId) : null;
 
@@ -121,10 +123,19 @@ export default function ExpenseDetailsPage() {
   const remainingUnitemized = Math.max(Number(expense.amount || 0) - lineItemsTotal, 0);
   const payerName = getParticipantName(trip, expense.paidBy);
   const eligibleForSettleNow = canExpenseSettleNow(expense);
+  const settlementSummary = getSettlementExpenseSummary(settlementRequests);
 
   function getSettlementStatusClass(status) {
     if (status === "settled") {
       return "status-confirmed";
+    }
+
+    if (status === "confirmed") {
+      return "status-confirmed";
+    }
+
+    if (status === "paid") {
+      return "status-paid";
     }
 
     if (status === "overdue") {
@@ -184,27 +195,57 @@ export default function ExpenseDetailsPage() {
     }
   }
 
-  async function handleMarkSettled(requestId) {
+  async function handleSettlementAction(requestId, action, successMessage) {
     setSettlementError("");
     setSettlementMessage("");
-    setSettlingRequestId(requestId);
+    setActingRequestId(requestId);
 
     try {
       const response = await fetch(`/api/trips/${trip.id}/settlement-requests/${requestId}`, {
-        method: "PATCH"
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action
+        })
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error || "Could not mark this settlement request as settled.");
+        throw new Error(payload.error || "Could not update this settlement request.");
       }
 
       await refreshSettlementRequests();
-      setSettlementMessage("This cost is now marked as settled for that participant.");
+      setSettlementMessage(successMessage);
     } catch (error) {
-      setSettlementError(error.message || "Could not mark this settlement request as settled.");
+      setSettlementError(error.message || "Could not update this settlement request.");
     } finally {
-      setSettlingRequestId("");
+      setActingRequestId("");
+    }
+  }
+
+  async function handleSettleBill() {
+    setSettlementError("");
+    setSettlementMessage("");
+    setIsSettlingBill(true);
+
+    try {
+      const response = await fetch(`/api/trips/${trip.id}/expenses/${expense.id}/settle-bill`, {
+        method: "POST"
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not mark this bill as settled.");
+      }
+
+      setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+      setSettlementMessage("Every confirmed debt on this bill is now closed, and the creditor marked the bill settled.");
+    } catch (error) {
+      setSettlementError(error.message || "Could not mark this bill as settled.");
+    } finally {
+      setIsSettlingBill(false);
     }
   }
 
@@ -306,52 +347,119 @@ export default function ExpenseDetailsPage() {
             {settlementError ? <p className="form-error">{settlementError}</p> : null}
             {settlementMessage ? <p className="success-copy">{settlementMessage}</p> : null}
 
+            {settlementRequests.length ? (
+              <div className="detail-grid">
+                <article className="highlight-card">
+                  <span>Pending or overdue</span>
+                  <strong>{settlementSummary.counts.pending + settlementSummary.counts.overdue}</strong>
+                </article>
+                <article className="highlight-card">
+                  <span>Paid by debtors</span>
+                  <strong>{settlementSummary.counts.paid}</strong>
+                </article>
+                <article className="highlight-card">
+                  <span>Confirmed</span>
+                  <strong>{settlementSummary.counts.confirmed}</strong>
+                </article>
+                <article className="highlight-card">
+                  <span>Settled</span>
+                  <strong>{settlementSummary.counts.settled}</strong>
+                </article>
+              </div>
+            ) : null}
+
             {loadingSettlementRequests ? (
               <p className="muted-copy">Loading the due-time payment requests for this expense.</p>
             ) : settlementRequests.length ? (
-              settlementRequests.map((request) => (
-                <article className="log-row" key={request.id}>
-                  <div className="log-row-top">
-                    <div>
-                      <strong>
-                        {getParticipantName(trip, request.fromParticipantId)} pays {getParticipantName(trip, request.toParticipantId)}
-                      </strong>
-                      <p className="muted-copy">
-                        {request.expenseTitle} | {formatCurrency(request.amount)}
-                      </p>
-                    </div>
-                    <span className={`status-badge ${getSettlementStatusClass(request.status)}`}>
-                      {getSettlementRequestStatusLabel(request.status)}
-                    </span>
-                  </div>
-                  <div className="log-row-meta">
-                    <span>Due {formatDateTime(request.dueAt)}</span>
-                    <span>
-                      {request.settledAt
-                        ? `Settled ${formatDateTime(request.settledAt)}`
-                        : request.reminder15mSentAt
-                          ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
-                          : request.reminder3hSentAt
-                            ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
-                            : request.initialSentAt
-                              ? `Initial notice sent ${formatDateTime(request.initialSentAt)}`
-                              : "Awaiting first notice"}
-                    </span>
-                  </div>
-                  {request.status !== "settled" ? (
+              <>
+                {settlementSummary.allConfirmed && !settlementSummary.allSettled ? (
+                  <div className="highlight-card valid">
+                    <span>Ready to close</span>
+                    <strong>Every debt has been confirmed by the creditor</strong>
+                    <p className="muted-copy">The creditor can now mark the whole bill as settled.</p>
                     <div className="contract-actions">
-                      <button
-                        className="secondary-button"
-                        disabled={settlingRequestId === request.id}
-                        onClick={() => handleMarkSettled(request.id)}
-                        type="button"
-                      >
-                        {settlingRequestId === request.id ? "Saving..." : "Mark as settled"}
+                      <button className="primary-button" disabled={isSettlingBill} onClick={handleSettleBill} type="button">
+                        {isSettlingBill ? "Closing bill..." : "Mark bill settled"}
                       </button>
                     </div>
-                  ) : null}
-                </article>
-              ))
+                  </div>
+                ) : null}
+
+                {settlementRequests.map((request) => (
+                  <article className="log-row" key={request.id}>
+                    <div className="log-row-top">
+                      <div>
+                        <strong>
+                          {getParticipantName(trip, request.fromParticipantId)} pays {getParticipantName(trip, request.toParticipantId)}
+                        </strong>
+                        <p className="muted-copy">
+                          {request.expenseTitle} | {formatCurrency(request.amount)}
+                        </p>
+                      </div>
+                      <span className={`status-badge ${getSettlementStatusClass(request.status)}`}>
+                        {getSettlementRequestStatusLabel(request.status)}
+                      </span>
+                    </div>
+                    <div className="log-row-meta">
+                      <span>Due {formatDateTime(request.dueAt)}</span>
+                      <span>
+                        {request.settledAt
+                          ? `Bill settled ${formatDateTime(request.settledAt)}`
+                          : request.confirmedAt
+                            ? `Creditor confirmed ${formatDateTime(request.confirmedAt)}`
+                            : request.paidAt
+                              ? `Debtor marked paid ${formatDateTime(request.paidAt)}`
+                              : request.reminder15mSentAt
+                                ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
+                                : request.reminder3hSentAt
+                                  ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
+                                  : request.initialSentAt
+                                    ? `Initial notice sent ${formatDateTime(request.initialSentAt)}`
+                                    : "Awaiting first notice"}
+                      </span>
+                    </div>
+                    <div className="contract-actions">
+                      {["pending", "overdue"].includes(request.status) ? (
+                        <button
+                          className="secondary-button"
+                          disabled={actingRequestId === request.id}
+                          onClick={() =>
+                            handleSettlementAction(
+                              request.id,
+                              "mark_paid",
+                              `${getParticipantName(trip, request.fromParticipantId)} marked this debt as paid.`
+                            )
+                          }
+                          type="button"
+                        >
+                          {actingRequestId === request.id ? "Saving..." : "Debtor marked paid"}
+                        </button>
+                      ) : null}
+
+                      {request.status === "paid" ? (
+                        <button
+                          className="primary-button"
+                          disabled={actingRequestId === request.id}
+                          onClick={() =>
+                            handleSettlementAction(
+                              request.id,
+                              "confirm_payment",
+                              `${getParticipantName(trip, request.toParticipantId)} confirmed receiving this payment.`
+                            )
+                          }
+                          type="button"
+                        >
+                          {actingRequestId === request.id ? "Confirming..." : "Creditor confirm payment"}
+                        </button>
+                      ) : null}
+
+                      {request.status === "confirmed" ? (
+                        <p className="success-copy">This debt is confirmed. Settle the full bill once every debt is confirmed.</p>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </>
             ) : (
               <p className="muted-copy">No enforceable payment requests exist for this expense yet.</p>
             )}

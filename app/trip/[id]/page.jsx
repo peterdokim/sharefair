@@ -37,20 +37,22 @@ export default function TripPage() {
 
   return (
     <AppShell
-      subtitle={`${trip.location || "Group trip"} | ${formatDateRange(trip.startDate, trip.endDate)}`}
-      title={trip.name}
+      title={<Link href="/">ShareFair</Link>}
       actions={
-        <Link className="primary-button compact" href={`/trip/${trip.id}/expense/new`}>
-          Add expense
-        </Link>
+        <div className="header-button-group">
+          <Link className="secondary-button compact-button" href={`/trip/${trip.id}/edit`}>
+            Edit details
+          </Link>
+          <Link className="primary-button compact" href={`/trip/${trip.id}/expense/new`}>
+            Add expense
+          </Link>
+        </div>
       }
     >
       <section className="hero-card">
-        <span className="badge badge-soft">Why this matters</span>
-        <h2>The planner should not carry the money and the awkwardness.</h2>
-        <p>
-          This room keeps every uneven cost visible as it happens, so repayment is shared context instead of one private burden.
-        </p>
+        <span className="badge badge-soft">Trip overview</span>
+        <h2>{trip.name}</h2>
+        <p>{formatDateRange(trip.startDate, trip.endDate)}</p>
         <div className="hero-stats">
           <div>
             <span>Total spent</span>
@@ -64,6 +66,47 @@ export default function TripPage() {
             <span>Pending transfers</span>
             <strong>{settlementPlan.length}</strong>
           </div>
+        </div>
+      </section>
+
+      <section className="panel stack">
+        <div className="section-header">
+          <div>
+            <span className="badge badge-soft">Trip basics</span>
+            <h2>Traveler details you can revisit</h2>
+          </div>
+          <Link className="text-link" href={`/trip/${trip.id}/edit`}>
+            Correct names or email
+          </Link>
+        </div>
+        <div className="detail-grid">
+          <div>
+            <span className="detail-label">Trip name</span>
+            <strong>{trip.name}</strong>
+          </div>
+          <div>
+            <span className="detail-label">Location</span>
+            <strong>{trip.location}</strong>
+          </div>
+          <div>
+            <span className="detail-label">Dates</span>
+            <strong>{formatDateRange(trip.startDate, trip.endDate)}</strong>
+          </div>
+          <div>
+            <span className="detail-label">Travelers</span>
+            <strong>{trip.participants.length}</strong>
+          </div>
+        </div>
+        <div className="stack">
+          {trip.participants.map((participant) => (
+            <div className="traveler-row" key={participant.id}>
+              <div>
+                <strong>{participant.name}</strong>
+                <p>{participant.email || "No email added yet"}</p>
+              </div>
+              <span className={`badge ${participant.email ? "badge-soft" : ""}`}>{participant.email ? "OTP ready" : "Needs email"}</span>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { demoReceipts } from "@/lib/demo-receipts";
+import { parseReceiptDraftText, readReceiptSource } from "@/lib/receipt-draft";
 import { useTripStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/trip-helpers";
 
@@ -38,6 +40,9 @@ export function AddExpenseForm({ trip }) {
     }, {})
   );
   const [lineItems, setLineItems] = useState([createLineItem()]);
+  const [receiptText, setReceiptText] = useState("");
+  const [receiptMessage, setReceiptMessage] = useState("");
+  const [isImportingReceipt, setIsImportingReceipt] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -87,6 +92,76 @@ export function AddExpenseForm({ trip }) {
 
       return current.filter((item) => item.id !== lineItemId);
     });
+  }
+
+  function applyReceiptDraft(draft) {
+    setForm((current) => ({
+      ...current,
+      title: draft.title || current.title,
+      category: draft.category || current.category,
+      amount: String(draft.amount || current.amount),
+      notes: draft.notes || current.notes
+    }));
+    setLineItems(
+      draft.lineItems?.length
+        ? draft.lineItems.map((item) => ({
+            id: item.id || createLineItem().id,
+            name: item.name,
+            amount: String(item.amount)
+          }))
+        : [createLineItem()]
+    );
+  }
+
+  async function handleReceiptFileChange(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setError("");
+    setReceiptMessage("");
+
+    try {
+      const nextReceiptText = await readReceiptSource(file);
+      setReceiptText(nextReceiptText);
+      setReceiptMessage(`${file.name} is loaded. Create a draft, then review the imported title, amount, and line items.`);
+    } catch (receiptError) {
+      setError(receiptError.message || "Could not read that receipt file.");
+    }
+  }
+
+  function handleCreateReceiptDraft() {
+    setError("");
+    setReceiptMessage("");
+    setIsImportingReceipt(true);
+
+    try {
+      const draft = parseReceiptDraftText(receiptText);
+      applyReceiptDraft(draft);
+      setReceiptMessage("Receipt draft created. Review the prefilled expense, assign participants, then save.");
+    } catch (receiptError) {
+      setError(receiptError.message || "Could not create the receipt draft.");
+    } finally {
+      setIsImportingReceipt(false);
+    }
+  }
+
+  function handleLoadDemoReceipt(sample) {
+    setError("");
+    setReceiptText(sample.text);
+    setIsImportingReceipt(true);
+
+    try {
+      const draft = parseReceiptDraftText(sample.text);
+      applyReceiptDraft(draft);
+      setReceiptMessage(`${sample.label} demo loaded. The draft is prefilled so you can show the receipt flow without uploading a real file.`);
+    } catch (receiptError) {
+      setError(receiptError.message || "Could not load that demo receipt.");
+    } finally {
+      setIsImportingReceipt(false);
+    }
   }
 
   async function handleSubmit(event) {
@@ -152,6 +227,64 @@ export function AddExpenseForm({ trip }) {
 
   return (
     <form className="stack-lg" onSubmit={handleSubmit}>
+      <section className="panel stack">
+        <div className="section-copy">
+          <span className="badge badge-soft">Receipt import</span>
+          <h2>Start from a receipt draft</h2>
+          <p>Load text or a text-based PDF receipt, let the app prefill the expense, then review and assign participants before saving.</p>
+        </div>
+        <label className="field">
+          <span>Upload a receipt file</span>
+          <input accept=".txt,.csv,.pdf,text/plain,text/csv,application/pdf" onChange={handleReceiptFileChange} type="file" />
+        </label>
+        <label className="field">
+          <span>Or paste receipt text</span>
+          <textarea
+            onChange={(event) => setReceiptText(event.target.value)}
+            placeholder={`Black Pork House\nPork Set 42000\nCold Noodles 12000\nDrinks 8000\nTotal 62000`}
+            rows="6"
+            value={receiptText}
+          />
+        </label>
+        <div className="stack">
+          <span className="field-label">Demo electronic receipts</span>
+          <div className="demo-receipt-grid">
+            {demoReceipts.map((sample) => (
+              <div className="demo-receipt-card" key={sample.id}>
+                <div>
+                  <strong>{sample.label}</strong>
+                  <p>{sample.summary}</p>
+                </div>
+                <button
+                  className="secondary-button"
+                  disabled={isImportingReceipt}
+                  onClick={() => handleLoadDemoReceipt(sample)}
+                  type="button"
+                >
+                  Use demo receipt
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="contract-actions">
+          <button className="primary-button" disabled={isImportingReceipt} onClick={handleCreateReceiptDraft} type="button">
+            {isImportingReceipt ? "Reading receipt..." : "Create prefilled draft"}
+          </button>
+        </div>
+        {receiptMessage ? (
+          <div className="highlight-card valid">
+            <span>Receipt draft</span>
+            <strong>Ready for review</strong>
+            <p>{receiptMessage}</p>
+          </div>
+        ) : (
+          <p className="muted-copy">
+            This prototype now reads text receipts and text-based electronic PDFs. Screenshot OCR can plug into the same draft flow later.
+          </p>
+        )}
+      </section>
+
       <section className="panel stack">
         <div className="section-copy">
           <span className="badge badge-soft">Expense</span>

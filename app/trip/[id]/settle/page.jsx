@@ -13,6 +13,7 @@ import {
   getParticipantName,
   getPaymentMethodLabel,
   getPaymentStatusLabel,
+  getSettlementExpenseSummary,
   getSettlementRequestStatusLabel,
   getSettlementPlan,
   getSortedPaymentLog,
@@ -27,7 +28,7 @@ export default function SettlePage() {
   const [settlementError, setSettlementError] = useState("");
   const [settlementMessage, setSettlementMessage] = useState("");
   const [loadingSettlementRequests, setLoadingSettlementRequests] = useState(false);
-  const [settlingRequestId, setSettlingRequestId] = useState("");
+  const [actingRequestId, setActingRequestId] = useState("");
   const trip = trips.find((item) => item.id === params.id);
 
   useEffect(() => {
@@ -97,6 +98,17 @@ export default function SettlePage() {
   const paymentLog = getSortedPaymentLog(trip);
   const confirmedPaymentId = searchParams.get("confirmedPayment");
   const eligibleExpenseCount = trip.expenses.filter((expense) => canExpenseSettleNow(expense)).length;
+  const requestsByExpense = settlementRequests.reduce((groups, request) => {
+    groups[request.expenseId] = groups[request.expenseId] || [];
+    groups[request.expenseId].push(request);
+    return groups;
+  }, {});
+  const readyToSettleExpenseIds = Object.entries(requestsByExpense)
+    .filter(([, requests]) => {
+      const summary = getSettlementExpenseSummary(requests);
+      return summary.allConfirmed && !summary.allSettled;
+    })
+    .map(([expenseId]) => expenseId);
 
   function getPendingPayment(transfer) {
     return paymentLog.find(
@@ -110,6 +122,14 @@ export default function SettlePage() {
   function getSettlementStatusClass(status) {
     if (status === "settled") {
       return "status-confirmed";
+    }
+
+    if (status === "confirmed") {
+      return "status-confirmed";
+    }
+
+    if (status === "paid") {
+      return "status-paid";
     }
 
     if (status === "overdue") {
@@ -132,40 +152,38 @@ export default function SettlePage() {
     setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
   }
 
-  async function handleMarkSettled(requestId) {
+  async function handleSettlementAction(requestId, action, successMessage) {
     setSettlementError("");
     setSettlementMessage("");
-    setSettlingRequestId(requestId);
+    setActingRequestId(requestId);
 
     try {
       const response = await fetch(`/api/trips/${trip.id}/settlement-requests/${requestId}`, {
-        method: "PATCH"
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action
+        })
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error || "Could not mark this social contract as settled.");
+        throw new Error(payload.error || "Could not update this social contract.");
       }
 
       await refreshSettlementRequests();
-      setSettlementMessage("The payer marked that due-time payment as settled.");
+      setSettlementMessage(successMessage);
     } catch (error) {
-      setSettlementError(error.message || "Could not mark this social contract as settled.");
+      setSettlementError(error.message || "Could not update this social contract.");
     } finally {
-      setSettlingRequestId("");
+      setActingRequestId("");
     }
   }
 
   return (
     <AppShell subtitle={`Neutral reminders for ${trip.name}`} title="Settle up">
-      <section className="hero-card">
-        <span className="badge badge-soft">Emotional relief</span>
-        <h2>The reminder comes from the room, not from one friend.</h2>
-        <p>
-          This is the core product move: turn repayment from a personal ask into a shared, neutral system event.
-        </p>
-      </section>
-
       <section className="panel stack">
         <div className="section-copy">
           <span className="badge badge-soft">Suggested transfers</span>
@@ -257,29 +275,65 @@ export default function SettlePage() {
                 </span>
                 <span>
                   {request.settledAt
-                    ? `Settled ${formatDateTime(request.settledAt)}`
-                    : request.reminder15mSentAt
-                      ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
-                      : request.reminder3hSentAt
-                        ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
-                        : request.initialSentAt
-                          ? `Initial email sent ${formatDateTime(request.initialSentAt)}`
-                          : "Initial email pending"}
+                    ? `Bill settled ${formatDateTime(request.settledAt)}`
+                    : request.confirmedAt
+                      ? `Creditor confirmed ${formatDateTime(request.confirmedAt)}`
+                      : request.paidAt
+                        ? `Debtor marked paid ${formatDateTime(request.paidAt)}`
+                        : request.reminder15mSentAt
+                          ? `15-minute ping sent ${formatDateTime(request.reminder15mSentAt)}`
+                          : request.reminder3hSentAt
+                            ? `3-hour ping sent ${formatDateTime(request.reminder3hSentAt)}`
+                            : request.initialSentAt
+                              ? `Initial email sent ${formatDateTime(request.initialSentAt)}`
+                              : "Initial email pending"}
                 </span>
               </div>
               <div className="contract-actions">
                 <Link className="text-link" href={`/trip/${trip.id}/expense/${request.expenseId}`}>
                   Open expense
                 </Link>
-                {request.status !== "settled" ? (
+
+                {["pending", "overdue"].includes(request.status) ? (
                   <button
                     className="secondary-button"
-                    disabled={settlingRequestId === request.id}
-                    onClick={() => handleMarkSettled(request.id)}
+                    disabled={actingRequestId === request.id}
+                    onClick={() =>
+                      handleSettlementAction(
+                        request.id,
+                        "mark_paid",
+                        `${getParticipantName(trip, request.fromParticipantId)} marked this debt as paid.`
+                      )
+                    }
                     type="button"
                   >
-                    {settlingRequestId === request.id ? "Saving..." : "Mark as settled"}
+                    {actingRequestId === request.id ? "Saving..." : "Debtor marked paid"}
                   </button>
+                ) : null}
+
+                {request.status === "paid" ? (
+                  <button
+                    className="primary-button"
+                    disabled={actingRequestId === request.id}
+                    onClick={() =>
+                      handleSettlementAction(
+                        request.id,
+                        "confirm_payment",
+                        `${getParticipantName(trip, request.toParticipantId)} confirmed receiving this payment.`
+                      )
+                    }
+                    type="button"
+                  >
+                    {actingRequestId === request.id ? "Confirming..." : "Creditor confirm payment"}
+                  </button>
+                ) : null}
+
+                {request.status === "confirmed" ? (
+                  <p className="success-copy">
+                    {readyToSettleExpenseIds.includes(request.expenseId)
+                      ? "Every debt for this expense is confirmed. Open the expense to settle the bill."
+                      : "Confirmed and waiting on the remaining debts for this bill."}
+                  </p>
                 ) : null}
               </div>
             </article>

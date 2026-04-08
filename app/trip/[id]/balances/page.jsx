@@ -34,11 +34,8 @@ export default function BalancesPage() {
   const summaries = getParticipantSummaries(trip).sort((left, right) => right.net - left.net);
 
   return (
-    <AppShell subtitle={`Shared balances for ${trip.name}`} title="Who owes what">
+    <AppShell subtitle={`Shared balances for ${trip.name}`} title="Balances">
       <section className="hero-card">
-        <span className="badge badge-soft">Fairness view</span>
-        <h2>Balances stay visible before resentment has time to build.</h2>
-        <p>The goal is to make fairness legible to everyone, not hidden inside one friend&apos;s notes app.</p>
         <div className="hero-stats">
           <div>
             <span>Total tracked</span>
