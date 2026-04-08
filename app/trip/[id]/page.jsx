@@ -37,7 +37,7 @@ export default function TripPage() {
 
   return (
     <AppShell
-      title={<Link href="/">ShareFair</Link>}
+      title={<Link href="/">Smart Contract</Link>}
       actions={
         <div className="header-button-group">
           <Link className="secondary-button compact-button" href={`/trip/${trip.id}/edit`}>

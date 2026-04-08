@@ -188,7 +188,7 @@ export default function ExpenseDetailsPage() {
       }
 
       setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
-      setSettlementMessage("The social contract is live. ShareFair emailed each participant and queued follow-up reminders.");
+      setSettlementMessage("The social contract is live. Smart Contract emailed each participant and queued follow-up reminders.");
     } catch (error) {
       setSettlementError(error.message || "Could not enforce the due-time reminder.");
     } finally {

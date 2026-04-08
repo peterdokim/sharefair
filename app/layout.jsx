@@ -2,7 +2,7 @@ import "@/app/globals.css";
 import { TripStoreProvider } from "@/lib/store";
 
 export const metadata = {
-  title: "FairShair",
+  title: "Smart Contract",
   description: "A mobile-first trip settlement prototype that protects friendships without losing fairness."
 };
 
@@ -15,4 +15,3 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-

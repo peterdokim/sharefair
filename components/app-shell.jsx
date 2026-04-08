@@ -8,10 +8,10 @@ export function AppShell({ title, subtitle, children, actions, showHome = true }
           <div>
             {showHome ? (
               <Link className="eyebrow-link" href="/">
-                ShareFair
+                Smart Contract
               </Link>
             ) : (
-              <span className="eyebrow-label">ShareFair</span>
+              <span className="eyebrow-label">Smart Contract</span>
             )}
             <h1>{title}</h1>
             {subtitle ? <p>{subtitle}</p> : null}
@@ -23,4 +23,3 @@ export function AppShell({ title, subtitle, children, actions, showHome = true }
     </div>
   );
 }
-

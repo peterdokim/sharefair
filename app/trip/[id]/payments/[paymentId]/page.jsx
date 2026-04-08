@@ -255,7 +255,7 @@ export default function PaymentProviderPage() {
 
         {payment.status === "confirmed" ? (
           <p className="success-copy">
-            The provider callback was verified server-side, and ShareFair marked this payment confirmed on{" "}
+            The provider callback was verified server-side, and Smart Contract marked this payment confirmed on{" "}
             {formatDateTime(payment.confirmedAt)}.
           </p>
         ) : payment.stepUpRequired && payment.stepUpStatus !== "verified" ? (

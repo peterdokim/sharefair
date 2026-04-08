@@ -516,7 +516,7 @@ export function AddExpenseForm({ trip }) {
           </div>
         ) : (
           <div className="stack">
-            <p className="muted-copy">Enter the unusual amounts first, then let ShareFair calculate the remaining people from that point.</p>
+            <p className="muted-copy">Enter the unusual amounts first, then let Smart Contract calculate the remaining people from that point.</p>
             <div className="detail-grid">
               <article className="highlight-card">
                 <span>Assigned so far</span>

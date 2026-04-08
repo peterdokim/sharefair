@@ -291,7 +291,7 @@ export default function SettlePage() {
       }
 
       await refreshSettlementRequests();
-      setSettlementMessage(`${expense.title} now has an exact due time. ShareFair emailed each participant and queued follow-up reminders.`);
+      setSettlementMessage(`${expense.title} now has an exact due time. Smart Contract emailed each participant and queued follow-up reminders.`);
     } catch (error) {
       setSettlementError(error.message || "Could not enforce the due-time reminder.");
     } finally {
@@ -448,7 +448,7 @@ export default function SettlePage() {
                       : missingEmailNames.length
                         ? `Add email for ${missingEmailNames.join(", ")} first`
                         : debtors.length
-                          ? "ShareFair will queue the 3-hour and 15-minute reminders"
+                          ? "Smart Contract will queue the 3-hour and 15-minute reminders"
                           : "No unpaid share remains on this bill"}
                   </span>
                 </div>

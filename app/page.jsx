@@ -35,7 +35,7 @@ export default function HomePage() {
 
   return (
     <AppShell
-      title="ShareFair"
+      title="Smart Contract"
       actions={
         <Link className="primary-button compact" href="/trip/new">
           New trip
