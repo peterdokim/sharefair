@@ -466,8 +466,22 @@ textarea {
 .balance-row {
   display: flex;
   gap: 14px;
-  align-items: center;
+  align-items: flex-start;
   padding: 16px 18px;
+}
+
+.balance-row-top-1 {
+  border-color: rgba(178, 75, 42, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(178, 75, 42, 0.16), transparent 28%),
+    linear-gradient(135deg, rgba(255, 250, 240, 0.96), rgba(247, 240, 226, 0.86));
+}
+
+.balance-row-top-3 {
+  border-color: rgba(20, 94, 85, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(20, 94, 85, 0.12), transparent 28%),
+    var(--surface);
 }
 
 .avatar {
@@ -488,6 +502,20 @@ textarea {
 
 .balance-copy strong {
   display: block;
+}
+
+.rank-number {
+  min-width: 34px;
+  color: var(--accent);
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 2.25rem;
+  line-height: 1;
+  font-weight: 800;
+  text-align: center;
+}
+
+.rank-number-top {
+  color: var(--ink);
 }
 
 .balance-copy span {

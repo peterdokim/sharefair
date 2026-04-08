@@ -9,8 +9,33 @@ import { formatCurrency } from "@/lib/trip-helpers";
 
 const categories = ["Hotel", "Food", "Transport", "Activity"];
 
+function toAmount(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function sumShares(customShares, participantIds) {
-  return participantIds.reduce((sum, participantId) => sum + Number(customShares[participantId] || 0), 0);
+  return participantIds.reduce((sum, participantId) => sum + toAmount(customShares[participantId]), 0);
+}
+
+function splitAmountEvenly(totalAmount, count) {
+  if (!count) {
+    return [];
+  }
+
+  const safeTotal = toAmount(totalAmount);
+  const baseShare = safeTotal / count;
+  let assigned = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    if (index === count - 1) {
+      return safeTotal - assigned;
+    }
+
+    const share = Math.round(baseShare);
+    assigned += share;
+    return share;
+  });
 }
 
 function createLineItem() {
@@ -48,8 +73,56 @@ export function AddExpenseForm({ trip }) {
 
   const amountNumber = Number(form.amount || 0);
   const selectedParticipants = useMemo(() => trip.participants.filter((participant) => form.participantIds.includes(participant.id)), [form.participantIds, trip.participants]);
+  const selectedParticipantIds = useMemo(() => selectedParticipants.map((participant) => participant.id), [selectedParticipants]);
   const customTotal = sumShares(customShares, form.participantIds);
+  const customBalance = amountNumber - customTotal;
   const lineItemsSubtotal = lineItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const customSplitRows = useMemo(
+    () =>
+      selectedParticipants.map((participant, index) => {
+        const participantIdsBeforeCurrent = selectedParticipantIds.slice(0, index);
+        const remainingParticipantCount = selectedParticipantIds.length - index;
+        const assignedBeforeCurrent = sumShares(customShares, participantIdsBeforeCurrent);
+        const remainingBeforeCurrent = amountNumber - assignedBeforeCurrent;
+        const suggestedPlan = splitAmountEvenly(Math.max(remainingBeforeCurrent, 0), remainingParticipantCount);
+        const currentValue = customShares[participant.id] ?? "";
+        const currentShare = toAmount(currentValue);
+        const balanceAfterCurrent = remainingBeforeCurrent - currentShare;
+
+        return {
+          participant,
+          index,
+          remainingParticipantCount,
+          remainingBeforeCurrent,
+          suggestedShare: suggestedPlan[0] || 0,
+          currentValue,
+          hasEnteredShare: String(currentValue).length > 0,
+          currentShare,
+          balanceAfterCurrent
+        };
+      }),
+    [amountNumber, customShares, selectedParticipantIds, selectedParticipants]
+  );
+
+  function updateCustomShare(participantId, value) {
+    setCustomShares((current) => ({ ...current, [participantId]: value }));
+  }
+
+  function applyRemainingSplit(startIndex) {
+    setCustomShares((current) => {
+      const participantIdsFromCurrent = selectedParticipantIds.slice(startIndex);
+      const assignedBeforeCurrent = sumShares(current, selectedParticipantIds.slice(0, startIndex));
+      const remainingBeforeCurrent = Math.max(amountNumber - assignedBeforeCurrent, 0);
+      const suggestedPlan = splitAmountEvenly(remainingBeforeCurrent, participantIdsFromCurrent.length);
+      const next = { ...current };
+
+      participantIdsFromCurrent.forEach((participantId, index) => {
+        next[participantId] = String(suggestedPlan[index] || 0);
+      });
+
+      return next;
+    });
+  }
 
   function toggleParticipant(participantId) {
     setForm((current) => {
@@ -443,25 +516,71 @@ export function AddExpenseForm({ trip }) {
           </div>
         ) : (
           <div className="stack">
-            {selectedParticipants.map((participant) => (
-              <label className="field" key={participant.id}>
-                <span>Share for {participant.name}</span>
-                <input
-                  inputMode="numeric"
-                  min="0"
-                  onChange={(event) => setCustomShares((current) => ({ ...current, [participant.id]: event.target.value }))}
-                  placeholder="0"
-                  type="number"
-                  value={customShares[participant.id]}
-                />
-              </label>
-            ))}
-            <div className={`highlight-card ${Math.round(customTotal) === Math.round(amountNumber) ? "valid" : ""}`}>
-              <span>Running total</span>
-              <strong>
-                {formatCurrency(customTotal)} / {formatCurrency(amountNumber)}
-              </strong>
+            <p className="muted-copy">Enter the unusual amounts first, then let ShareFair calculate the remaining people from that point.</p>
+            <div className="detail-grid">
+              <article className="highlight-card">
+                <span>Assigned so far</span>
+                <strong>{formatCurrency(customTotal)}</strong>
+              </article>
+              <article className={`highlight-card ${Math.round(customTotal) === Math.round(amountNumber) ? "valid" : ""}`}>
+                <span>{customBalance >= 0 ? "Left to assign" : "Over by"}</span>
+                <strong>{formatCurrency(Math.abs(customBalance))}</strong>
+              </article>
             </div>
+
+            {customSplitRows.length ? (
+              customSplitRows.map((row) => (
+                <article className="log-row stack" key={row.participant.id}>
+                  <div className="log-row-top">
+                    <div>
+                      <strong>{row.participant.name}</strong>
+                      <p className="muted-copy">
+                        {row.remainingBeforeCurrent < 0
+                          ? `The split is already over by ${formatCurrency(Math.abs(row.remainingBeforeCurrent))} before this row.`
+                          : row.remainingParticipantCount === 1
+                            ? `Remainder to balance the bill: ${formatCurrency(row.remainingBeforeCurrent)}.`
+                            : `${formatCurrency(row.remainingBeforeCurrent)} is still unassigned. From here, an even split would be ${formatCurrency(row.suggestedShare)} each for ${row.remainingParticipantCount} people.`}
+                      </p>
+                    </div>
+                    <button
+                      className="secondary-button compact-button"
+                      disabled={row.remainingBeforeCurrent <= 0}
+                      onClick={() => applyRemainingSplit(row.index)}
+                      type="button"
+                    >
+                      {row.remainingParticipantCount === 1 ? "Use remainder" : "Split rest equally"}
+                    </button>
+                  </div>
+                  <label className="field">
+                    <span>Share for {row.participant.name}</span>
+                    <input
+                      inputMode="numeric"
+                      min="0"
+                      onChange={(event) => updateCustomShare(row.participant.id, event.target.value)}
+                      placeholder={String(row.suggestedShare || 0)}
+                      type="number"
+                      value={row.currentValue}
+                    />
+                  </label>
+                  <div className="log-row-meta">
+                    <span>
+                      {row.hasEnteredShare
+                        ? `Current share ${formatCurrency(row.currentShare)}`
+                        : "No share entered yet"}
+                    </span>
+                    <span>
+                      {row.balanceAfterCurrent > 0
+                        ? `Leaves ${formatCurrency(row.balanceAfterCurrent)} for the remaining people`
+                        : row.balanceAfterCurrent === 0
+                          ? "This balances the full expense"
+                          : `Over by ${formatCurrency(Math.abs(row.balanceAfterCurrent))}`}
+                    </span>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="muted-copy">Select at least one participant to enter a custom split.</p>
+            )}
           </div>
         )}
       </section>

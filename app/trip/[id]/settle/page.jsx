@@ -10,9 +10,12 @@ import {
   canExpenseSettleNow,
   formatCurrency,
   formatDateTime,
+  formatDateTimeInputValue,
+  getExpenseShares,
   getParticipantName,
   getPaymentMethodLabel,
   getPaymentStatusLabel,
+  getSettlementContractDescription,
   getSettlementExpenseSummary,
   getSettlementRequestStatusLabel,
   getSettlementPlan,
@@ -29,6 +32,8 @@ export default function SettlePage() {
   const [settlementMessage, setSettlementMessage] = useState("");
   const [loadingSettlementRequests, setLoadingSettlementRequests] = useState(false);
   const [actingRequestId, setActingRequestId] = useState("");
+  const [creatingExpenseId, setCreatingExpenseId] = useState("");
+  const [dueAtByExpenseId, setDueAtByExpenseId] = useState({});
   const trip = trips.find((item) => item.id === params.id);
 
   useEffect(() => {
@@ -76,6 +81,30 @@ export default function SettlePage() {
     };
   }, [hydrated, trip?.id]);
 
+  useEffect(() => {
+    if (!trip?.expenses?.length) {
+      return;
+    }
+
+    const defaultDueAt = formatDateTimeInputValue(new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString());
+
+    setDueAtByExpenseId((current) => {
+      let hasChange = false;
+      const next = { ...current };
+
+      for (const expense of trip.expenses) {
+        if (!canExpenseSettleNow(expense) || next[expense.id]) {
+          continue;
+        }
+
+        next[expense.id] = defaultDueAt;
+        hasChange = true;
+      }
+
+      return hasChange ? next : current;
+    });
+  }, [trip?.expenses]);
+
   if (!hydrated) {
     return (
       <AppShell subtitle="We are loading the latest settlement data from the server." title="Loading settle up">
@@ -97,12 +126,35 @@ export default function SettlePage() {
   const transfers = getSettlementPlan(trip);
   const paymentLog = getSortedPaymentLog(trip);
   const confirmedPaymentId = searchParams.get("confirmedPayment");
-  const eligibleExpenseCount = trip.expenses.filter((expense) => canExpenseSettleNow(expense)).length;
   const requestsByExpense = settlementRequests.reduce((groups, request) => {
     groups[request.expenseId] = groups[request.expenseId] || [];
     groups[request.expenseId].push(request);
     return groups;
   }, {});
+  const socialContractExpenses = trip.expenses
+    .filter((expense) => {
+      if (!canExpenseSettleNow(expense)) {
+        return false;
+      }
+
+      const shares = getExpenseShares(expense);
+      const hasDebtor = expense.participantIds.some(
+        (participantId) => participantId !== expense.paidBy && Number(shares[participantId] || 0) > 0
+      );
+
+      return hasDebtor || Boolean(requestsByExpense[expense.id]?.length);
+    })
+    .sort((left, right) => {
+      const leftHasLiveContract = (requestsByExpense[left.id] || []).some((request) => request.status !== "settled");
+      const rightHasLiveContract = (requestsByExpense[right.id] || []).some((request) => request.status !== "settled");
+
+      if (leftHasLiveContract !== rightHasLiveContract) {
+        return leftHasLiveContract ? -1 : 1;
+      }
+
+      return new Date(right.createdAt || 0) - new Date(left.createdAt || 0);
+    });
+  const eligibleExpenseCount = socialContractExpenses.length;
   const readyToSettleExpenseIds = Object.entries(requestsByExpense)
     .filter(([, requests]) => {
       const summary = getSettlementExpenseSummary(requests);
@@ -139,6 +191,55 @@ export default function SettlePage() {
     return "status-pending";
   }
 
+  function getSocialContractBadge(requests) {
+    const summary = getSettlementExpenseSummary(requests);
+
+    if (summary.allConfirmed && !summary.allSettled) {
+      return {
+        className: "status-confirmed",
+        label: "Ready to close"
+      };
+    }
+
+    if (summary.counts.overdue) {
+      return {
+        className: "status-overdue",
+        label: "Overdue"
+      };
+    }
+
+    if (summary.counts.paid) {
+      return {
+        className: "status-paid",
+        label: "Awaiting creditor"
+      };
+    }
+
+    return {
+      className: "status-pending",
+      label: requests.length ? "Contract live" : "Ready for due time"
+    };
+  }
+
+  function getSocialContractProgress(summary) {
+    const parts = [];
+    const openCount = summary.counts.pending + summary.counts.overdue;
+
+    if (openCount) {
+      parts.push(`${openCount} open`);
+    }
+
+    if (summary.counts.paid) {
+      parts.push(`${summary.counts.paid} marked paid`);
+    }
+
+    if (summary.counts.confirmed) {
+      parts.push(`${summary.counts.confirmed} confirmed`);
+    }
+
+    return parts.join(" | ") || "Ready to send";
+  }
+
   async function refreshSettlementRequests() {
     const response = await fetch(`/api/trips/${trip.id}/settlement-requests`, {
       cache: "no-store"
@@ -150,6 +251,52 @@ export default function SettlePage() {
     }
 
     setSettlementRequests(getSortedSettlementRequests(payload.settlementRequests || []));
+  }
+
+  function handleDueAtChange(expenseId, value) {
+    setDueAtByExpenseId((current) => ({
+      ...current,
+      [expenseId]: value
+    }));
+  }
+
+  async function handleCreateSocialContract(event, expense) {
+    event.preventDefault();
+    const selectedDueAt = dueAtByExpenseId[expense.id];
+
+    setSettlementError("");
+    setSettlementMessage("");
+
+    if (!selectedDueAt) {
+      setSettlementError("Choose the exact due date and time before sending this social contract.");
+      return;
+    }
+
+    setCreatingExpenseId(expense.id);
+
+    try {
+      const response = await fetch(`/api/trips/${trip.id}/expenses/${expense.id}/settle-now`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          dueAt: new Date(selectedDueAt).toISOString()
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not enforce the due-time reminder.");
+      }
+
+      await refreshSettlementRequests();
+      setSettlementMessage(`${expense.title} now has an exact due time. ShareFair emailed each participant and queued follow-up reminders.`);
+    } catch (error) {
+      setSettlementError(error.message || "Could not enforce the due-time reminder.");
+    } finally {
+      setCreatingExpenseId("");
+    }
   }
 
   async function handleSettlementAction(requestId, action, successMessage) {
@@ -240,16 +387,131 @@ export default function SettlePage() {
 
       <section className="panel stack">
         <div className="section-copy">
-          <span className="badge badge-soft">Social contracts</span>
-          <h2>Due-time enforcement for food and transport</h2>
-          <p>
-            Eligible expenses can turn into enforceable payment requests with an exact deadline, a first email, and follow-up
-            pings 3 hours and 15 minutes before the due time.
-          </p>
+          <span className="badge badge-soft">Social contract</span>
+          <h2>Settle this cost by an exact time</h2>
+          <p>Pick a food or transport expense and set the deadline directly from the settle tab.</p>
         </div>
 
         {settlementError ? <p className="form-error">{settlementError}</p> : null}
         {settlementMessage ? <p className="success-copy">{settlementMessage}</p> : null}
+
+        {loadingSettlementRequests ? (
+          <p className="muted-copy">Loading eligible expenses and their current social contract status.</p>
+        ) : socialContractExpenses.length ? (
+          socialContractExpenses.map((expense) => {
+            const expenseRequests = requestsByExpense[expense.id] || [];
+            const liveRequests = expenseRequests.filter((request) => request.status !== "settled");
+            const settledRequests = expenseRequests.filter((request) => request.status === "settled");
+            const liveSummary = getSettlementExpenseSummary(liveRequests);
+            const payerName = getParticipantName(trip, expense.paidBy);
+            const shares = getExpenseShares(expense);
+            const debtors = expense.participantIds
+              .filter(
+                (participantId) =>
+                  participantId !== expense.paidBy && Number(shares[participantId] || 0) > 0
+              )
+              .map((participantId) => trip.participants.find((participant) => participant.id === participantId))
+              .filter(Boolean);
+            const missingEmailNames = debtors
+              .filter((participant) => !participant.email)
+              .map((participant) => participant.name);
+            const hasLiveContract = liveRequests.length > 0;
+            const canCreateContract = !hasLiveContract && debtors.length > 0 && missingEmailNames.length === 0;
+            const badge = getSocialContractBadge(liveRequests);
+            const previousContract = settledRequests[settledRequests.length - 1];
+
+            return (
+              <article className="log-row stack" key={expense.id}>
+                <div className="log-row-top">
+                  <div>
+                    <strong>{expense.title}</strong>
+                    <p className="muted-copy">
+                      {expense.category} | {formatCurrency(expense.amount)} | Paid by {payerName}
+                    </p>
+                  </div>
+                  <span className={`status-badge ${badge.className}`}>{badge.label}</span>
+                </div>
+
+                <p className="muted-copy">{getSettlementContractDescription(expense.category, payerName)}</p>
+
+                <div className="log-row-meta">
+                  <span>
+                    {hasLiveContract
+                      ? `Current due time ${formatDateTime(liveRequests[0].dueAt)}`
+                      : previousContract?.settledAt
+                        ? `Previous contract closed ${formatDateTime(previousContract.settledAt)}`
+                        : `${debtors.length} debtor${debtors.length === 1 ? "" : "s"} will get the first email immediately`}
+                  </span>
+                  <span>
+                    {hasLiveContract
+                      ? getSocialContractProgress(liveSummary)
+                      : missingEmailNames.length
+                        ? `Add email for ${missingEmailNames.join(", ")} first`
+                        : debtors.length
+                          ? "ShareFair will queue the 3-hour and 15-minute reminders"
+                          : "No unpaid share remains on this bill"}
+                  </span>
+                </div>
+
+                {hasLiveContract ? (
+                  <div className="contract-actions">
+                    <Link className="text-link" href={`/trip/${trip.id}/expense/${expense.id}`}>
+                      Open expense
+                    </Link>
+                    {liveSummary.allConfirmed && !liveSummary.allSettled ? (
+                      <p className="success-copy">Every debtor is confirmed. The creditor can settle the bill now.</p>
+                    ) : (
+                      <p className="muted-copy">This social contract is already running for the bill.</p>
+                    )}
+                  </div>
+                ) : canCreateContract ? (
+                  <form className="stack" onSubmit={(event) => handleCreateSocialContract(event, expense)}>
+                    <label className="field">
+                      <span>Exact due time</span>
+                      <input
+                        min={formatDateTimeInputValue(new Date().toISOString())}
+                        onChange={(event) => handleDueAtChange(expense.id, event.target.value)}
+                        type="datetime-local"
+                        value={dueAtByExpenseId[expense.id] || ""}
+                      />
+                    </label>
+                    <div className="contract-actions">
+                      <Link className="text-link" href={`/trip/${trip.id}/expense/${expense.id}`}>
+                        Open expense
+                      </Link>
+                      <button className="primary-button" disabled={creatingExpenseId === expense.id} type="submit">
+                        {creatingExpenseId === expense.id ? "Sending contract..." : "Enforce settle now"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="contract-actions">
+                    <Link className="text-link" href={`/trip/${trip.id}/expense/${expense.id}`}>
+                      Open expense
+                    </Link>
+                    <p className="muted-copy">
+                      {missingEmailNames.length
+                        ? `Add an email for ${missingEmailNames.join(", ")} before sending the contract.`
+                        : "No unpaid debtor share remains on this expense."}
+                    </p>
+                  </div>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <p className="muted-copy">
+            No food or transport expense with an unpaid share is ready for a due-time contract yet.
+          </p>
+        )}
+      </section>
+
+      <section className="panel stack">
+        <div className="section-copy">
+          <span className="badge badge-soft">Active social contracts</span>
+          <h2>Due-time enforcement in motion</h2>
+          <p>Every request stays visible with its exact due time, reminder trail, and confirmation status.</p>
+        </div>
 
         {loadingSettlementRequests ? (
           <p className="muted-copy">Loading the active social contracts for this room.</p>
@@ -340,8 +602,8 @@ export default function SettlePage() {
           ))
         ) : (
           <p className="muted-copy">
-            No due-time contracts exist yet. Open a food or transport expense to enforce a payment deadline. {eligibleExpenseCount}{" "}
-            eligible expense{eligibleExpenseCount === 1 ? "" : "s"} currently match that rule.
+            No due-time contracts exist yet. {eligibleExpenseCount} eligible expense
+            {eligibleExpenseCount === 1 ? "" : "s"} currently match the rule above.
           </p>
         )}
       </section>

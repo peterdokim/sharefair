@@ -15,6 +15,7 @@ import {
   getExpenseLineItemsTotal,
   getExpenseShares,
   getParticipantName,
+  getSettlementContractDescription,
   getSettlementExpenseSummary,
   getSettlementRequestStatusLabel,
   getSortedSettlementRequests,
@@ -325,11 +326,7 @@ export default function ExpenseDetailsPage() {
         <div className="section-copy">
           <span className="badge badge-soft">Social contract</span>
           <h2>Settle this cost by an exact time</h2>
-          <p>
-            {eligibleForSettleNow
-              ? `Because this is a ${expense.category.toLowerCase()} cost, ${payerName} can enforce a due time and ShareFair will email the group immediately, then ping again 3 hours and 15 minutes before the deadline.`
-              : "Settle now enforcement is only available for food and transportation expenses in this version."}
-          </p>
+          <p>{getSettlementContractDescription(expense.category, payerName)}</p>
         </div>
 
         {eligibleForSettleNow ? (
